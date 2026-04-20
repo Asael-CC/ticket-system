@@ -16,10 +16,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Create dummy Prisma client for build (real one generated at runtime)
-RUN mkdir -p packages/database/node_modules/.prisma/client && \
-    echo 'export const PrismaClient = class {}; export const Prisma = {}; module.exports = {PrismaClient, Prisma};' > packages/database/node_modules/.prisma/client/index.js && \
-    echo 'export * from "./index.js";' > packages/database/node_modules/.prisma/client/index.d.ts
+# Generate Prisma client using a dummy DATABASE_URL (required for generation)
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy?schema=public"
+RUN cd packages/database && npx prisma generate && cd ../..
 
 # Build the project
 ENV NEXT_TELEMETRY_DISABLED 1
