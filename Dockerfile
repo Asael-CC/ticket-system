@@ -18,7 +18,7 @@ COPY . .
 
 # Generate Prisma client using the local Prisma version (5.x)
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy?schema=public"
-RUN cd packages/database && npm exec prisma generate && cd ../..
+RUN ./node_modules/.bin/prisma generate --schema=packages/database/prisma/schema.prisma
 
 # Build the project
 ENV NEXT_TELEMETRY_DISABLED 1
