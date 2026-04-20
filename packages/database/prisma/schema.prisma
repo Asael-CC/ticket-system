@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enum para roles de usuario
+enum Role {
+  ADMIN
+  AGENT
+  SUPERVISOR
+  CUSTOMER    // Solo puede crear tickets y comentar
+}
+
+// Enum para estados de ticket
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+// Enum para prioridades
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Modelo de Usuario
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  password  String   // Hasheado con bcrypt
+  role      Role     @default(AGENT)
+  isActive  Boolean  @default(true)
+
+  // Relaciones
+  queues            Queue[]    // Colas a las que pertenece
+  assignedTickets   Ticket[]   @relation("AssignedTickets")
+  createdTickets    Ticket[]   @relation("CreatedTickets")
+  comments          Comment[]
+  activities        Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Modelo de Cola de Trabajo
+model Queue {
+  id          String   @id @default(uuid())
+  name        String   // Ej: "Soporte Nivel 1", "Infraestructura"
+  description String?
+  color       String   @default("#3B82F6") // Para identificación visual
+  isActive    Boolean  @default(true)
+
+  // Relaciones
+  agents      User[]
+  tickets     Ticket[]
+  slaConfig   SLAConfig?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Modelo de Ticket
+model Ticket {
+  id          String       @id @default(cuid())
+  number      String       @unique // TICK-2024-000001
+  subject     String
+  description String
+  status      TicketStatus @default(OPEN)
+  priority    Priority     @default(MEDIUM)
+
+  // Relaciones
+  requesterId String
+  requester   User         @relation("CreatedTickets", fields: [requesterId], references: [id])
+
+  queueId     String
+  queue       Queue        @relation(fields: [queueId], references: [id])
+
+  assignedToId String?
+  assignedTo  User?        @relation("AssignedTickets", fields: [assignedToId], references: [id])
+
+  // Categorización
+  category    String?      // hardware, software, red, etc.
+  tags        String[]     @default([])
+
+  // SLA
+  slaDeadline     DateTime?
+  slaBreached     Boolean  @default(false)
+  firstResponseAt DateTime?
+  resolvedAt      DateTime?
+
+  // Slack integration
+  slackChannelId  String?
+  slackThreadTs   String?
+
+  // Timestamps
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  closedAt    DateTime?
+
+  // Relaciones
+  comments    Comment[]
+  activities  Activity[]
+}
+
+// Modelo de Comentarios
+model Comment {
+  id          String   @id @default(uuid())
+  content     String
+  isInternal  Boolean  @default(true) // true = nota interna, false = visible al cliente
+
+  // Relaciones
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+
+  // Para menciones
+  mentionedUserIds String[] @default([])
+
+  // Slack
+  slackMessageTs String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Configuración de SLA por cola
+model SLAConfig {
+  id          String   @id @default(uuid())
+  queueId     String   @unique
+  queue       Queue    @relation(fields: [queueId], references: [id], onDelete: Cascade)
+
+  // Tiempos en minutos
+  firstResponseTimeMinutes Int // Tiempo para primera respuesta
+  resolutionTimeMinutes    Int // Tiempo para resolver
+
+  // Horario de trabajo
+  businessHoursOnly Boolean @default(true)
+  workStartHour     Int     @default(9)  // 9 AM
+  workEndHour       Int     @default(18) // 6 PM
+  workDays          Int[]   @default([1, 2, 3, 4, 5]) // Lunes a Viernes (1=Dom, 7=Sab)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Historial de actividades (auditoría)
+model Activity {
+  id          String   @id @default(uuid())
+  action      String   // CREATED, STATUS_CHANGED, ASSIGNED, COMMENT_ADDED, etc.
+  description String?
+  metadata    Json?    // Datos adicionales en formato JSON
+
+  // Relaciones
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+
+  createdAt   DateTime @default(now())
+}
